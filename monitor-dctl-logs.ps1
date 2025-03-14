@@ -10,6 +10,7 @@ param (
     [switch]$ErrorsOnly,
     [switch]$NoColor,
     [string]$DCTLFile = "grid.dctl",
+    [switch]$ShowLineNumbers,
     [switch]$Help
 )
 
@@ -25,18 +26,20 @@ function Show-Usage {
     Write-Host "  -ErrorsOnly          Only show error messages"
     Write-Host "  -NoColor             Disable colored output"
     Write-Host "  -DCTLFile <path>     Path to DCTL file to copy with 'c' key (optional)"
+    Write-Host "  -ShowLineNumbers     Show line numbers in the output"
     Write-Host "  -Help                Display this help message"
     Write-Host ""
     Write-Host "Examples:"
     Write-Host "  .\monitor-dctl-logs.ps1"
     Write-Host "  .\monitor-dctl-logs.ps1 -DCTLOnly"
     Write-Host "  .\monitor-dctl-logs.ps1 -Filter 'grid.dctl'"
-    Write-Host "  .\monitor-dctl-logs.ps1 -ErrorsOnly -DCTLOnly -DCTLFile 'C:\code\DCTL\grid.dctl'"
+    Write-Host "  .\monitor-dctl-logs.ps1 -ErrorsOnly -DCTLOnly -DCTLFile 'C:\code\DCTL\grid.dctl' -ShowLineNumbers"
     Write-Host ""
     Write-Host "Interactive Commands (while monitoring):"
     Write-Host "  c - Copy the specified DCTL file to DaVinci Resolve LUTs folder"
     Write-Host "  f - Toggle DCTL-only filter"
     Write-Host "  e - Toggle errors-only filter"
+    Write-Host "  l - Toggle line numbers"
     Write-Host "  r - Reload/restart monitoring"
     Write-Host "  h - Show help"
     Write-Host "  q - Quit"
@@ -121,6 +124,32 @@ function Should-DisplayLine {
     return $true
 }
 
+# Function to process log lines, handling the || delimiter and formatting
+function Process-LogLine {
+    param (
+        [string]$Line,
+        [int]$LineNumber = 0
+    )
+    
+    # Replace || with newline and split into multiple lines
+    $lines = $Line -split '\|\|'
+    
+    # Process each line
+    foreach ($subLine in $lines) {
+        # Add four spaces to the beginning of each line for alignment
+        $formattedLine = "    $subLine"
+        
+        # Add line number if enabled
+        if ($ShowLineNumbers -and $LineNumber -gt 0) {
+            $formattedLine = "{0,5}: {1}" -f $LineNumber, $formattedLine
+            $LineNumber++
+        }
+        
+        # Display the line with appropriate color
+        Format-LogLine $formattedLine
+    }
+}
+
 # Function to colorize log output based on content
 function Format-LogLine {
     param (
@@ -159,6 +188,7 @@ function Show-FilterStatus {
     if ($DCTLOnly) { $filterDescription += "DCTL entries only, " }
     if ($ErrorsOnly) { $filterDescription += "Errors only, " }
     if ($Filter) { $filterDescription += "Pattern: '$Filter', " }
+    if ($ShowLineNumbers) { $filterDescription += "Line numbers: ON, " }
     if ($filterDescription) { 
         $filterDescription = "Filters: " + $filterDescription.TrimEnd(", ")
     } else {
@@ -178,8 +208,9 @@ function Show-FilterStatus {
 function Show-MonitoringHelp {
     Write-Host "`n=== Keyboard Commands ===" -ForegroundColor Cyan
     Write-Host "c - Copy the specified DCTL file to DaVinci Resolve LUTs folder"
-    Write-Host "f - Toggle DCTL-only filter (currently: $($DCTLOnly ? 'ON' : 'OFF'))"
-    Write-Host "e - Toggle errors-only filter (currently: $($ErrorsOnly ? 'ON' : 'OFF'))"
+    Write-Host "f - Toggle DCTL-only filter (currently: $(if ($DCTLOnly) {'ON'} else {'OFF'}))"
+    Write-Host "e - Toggle errors-only filter (currently: $(if ($ErrorsOnly) {'ON'} else {'OFF'}))"
+    Write-Host "l - Toggle line numbers (currently: $(if ($ShowLineNumbers) {'ON'} else {'OFF'}))"
     Write-Host "r - Reload/restart monitoring"
     Write-Host "h - Show this help"
     Write-Host "q - Quit"
@@ -202,6 +233,9 @@ function Start-Monitoring {
         Get-Content -Path $logFile -Tail $initialLines -Wait
     } -ArgumentList $LogFile, $InitialLines
     
+    # Initialize line counter
+    $lineNumber = 1
+    
     # Monitor for keystrokes while displaying log content
     try {
         while ($true) {
@@ -209,7 +243,8 @@ function Start-Monitoring {
             $jobOutput = Receive-Job -Job $job
             if ($jobOutput) {
                 foreach ($line in $jobOutput) {
-                    Format-LogLine $line
+                    Process-LogLine -Line $line -LineNumber $(if ($ShowLineNumbers) { $lineNumber } else { 0 })
+                    $lineNumber++
                 }
             }
             
@@ -224,12 +259,17 @@ function Start-Monitoring {
                     }
                     'f' {
                         $DCTLOnly = -not $DCTLOnly
-                        Write-Host "`n[i] DCTL-only filter toggled to: $($DCTLOnly ? 'ON' : 'OFF')" -ForegroundColor Cyan
+                        Write-Host "`n[i] DCTL-only filter toggled to: $(if ($DCTLOnly) {'ON'} else {'OFF'})" -ForegroundColor Cyan
                         break
                     }
                     'e' {
                         $ErrorsOnly = -not $ErrorsOnly
-                        Write-Host "`n[i] Errors-only filter toggled to: $($ErrorsOnly ? 'ON' : 'OFF')" -ForegroundColor Cyan
+                        Write-Host "`n[i] Errors-only filter toggled to: $(if ($ErrorsOnly) {'ON'} else {'OFF'})" -ForegroundColor Cyan
+                        break
+                    }
+                    'l' {
+                        $ShowLineNumbers = -not $ShowLineNumbers
+                        Write-Host "`n[i] Line numbers toggled to: $(if ($ShowLineNumbers) {'ON'} else {'OFF'})" -ForegroundColor Cyan
                         break
                     }
                     'r' {

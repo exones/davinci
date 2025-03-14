@@ -1,0 +1,22 @@
+{
+  // Associate DCTL files with C syntax highlighting but disable linting
+  "files.associations": {
+    "*.dctl": "c"
+  },
+
+  // Disable C/C++ IntelliSense for DCTL files
+  // "C_Cpp.intelliSenseEngine": "disabled",
+  "C_Cpp.errorSquiggles": "disabled",
+
+  // Disable semantic highlighting for C files (which includes DCTL files)
+  "[c]": {
+    "editor.semanticHighlighting.enabled": false
+  },
+
+  // Editor settings for DCTL files
+  "[dctl]": {
+    "editor.formatOnSave": true,
+    "editor.formatOnPaste": true,
+    "editor.formatOnType": true
+  }
+}
