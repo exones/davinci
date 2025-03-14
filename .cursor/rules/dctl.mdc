@@ -1,0 +1,7 @@
+---
+description: DCTL rules
+globs: *.dctl
+alwaysApply: false
+---
+- The DCTL documentation is located in DCTL-DOCUMENTATION.md
+- transform can return float4 where the 4th param is alpha

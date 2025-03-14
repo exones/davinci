@@ -1,15 +1,20 @@
 // Grid Selector DCTL - Creates a customizable grid and shows only the selected cell
 // Allows defining rows, columns, spacing, borders, and selecting a specific cell
+// Author: Aleksey Larchenko aleksey.larchenko@gmail.com
+// License: Apache 2.0
+
+// Define alpha mode as straight
+// DEFINE_DCTL_ALPHA_MODE_STRAIGHT
 
 // Define UI parameters
 DEFINE_UI_PARAMS(rows, Number of Rows, DCTLUI_SLIDER_INT, 3, 1, 10, 1)
 DEFINE_UI_PARAMS(columns, Number of Columns, DCTLUI_SLIDER_INT, 3, 1, 10, 1)
 DEFINE_UI_PARAMS(selectedRow, Selected Row, DCTLUI_SLIDER_INT, 1, 1, 10, 1)
 DEFINE_UI_PARAMS(selectedColumn, Selected Column, DCTLUI_SLIDER_INT, 1, 1, 10, 1)
-DEFINE_UI_PARAMS(cellSpacing, Cell Spacing, DCTLUI_SLIDER_INT, 5, 0, 50, 1)
-DEFINE_UI_PARAMS(outerBorderWidth, Outer Border Width, DCTLUI_SLIDER_INT, 10, 0, 50, 1)
-DEFINE_UI_PARAMS(showGrid, Show Grid Lines, DCTLUI_CHECK_BOX, 1)
-DEFINE_UI_PARAMS(gridColor, Grid Color, DCTLUI_COLOR_PICKER, 0.0f, 0.0f, 0.0f)
+DEFINE_UI_PARAMS(cellSpacing, Cell Spacing, DCTLUI_SLIDER_INT, 10, 0, 100, 1)
+DEFINE_UI_PARAMS(outerBorderWidth, Outer Border Width, DCTLUI_SLIDER_INT, 10, 0, 100, 1)
+DEFINE_UI_PARAMS(showGrid, Show Grid Lines, DCTLUI_CHECK_BOX, 0)
+DEFINE_UI_PARAMS(gridColor, Grid Color, DCTLUI_COLOR_PICKER, 1.0f, 1.0f, 0.0f)
 
 // Define tooltips
 DEFINE_UI_TOOLTIP(rows, "Number of rows in the grid")
@@ -21,6 +26,17 @@ DEFINE_UI_TOOLTIP(outerBorderWidth, "Width of the outer border in pixels")
 DEFINE_UI_TOOLTIP(showGrid, "Toggle grid lines visibility")
 DEFINE_UI_TOOLTIP(gridColor, "Color of the grid lines")
 
+// Define a custom struct for grid cell information
+typedef struct
+{
+    float startX;
+    float startY;
+    float endX;
+    float endY;
+    int row;
+    int column;
+} GridCell;
+
 // Declare UI parameters as device variables
 __DEVICE__ int rows;
 __DEVICE__ int columns;
@@ -30,6 +46,47 @@ __DEVICE__ int cellSpacing;
 __DEVICE__ int outerBorderWidth;
 __DEVICE__ int showGrid;
 __DEVICE__ DCTLColorPickerParam gridColor;
+
+// Function to calculate cell dimensions and create a GridCell struct
+__DEVICE__ GridCell calculateCellDimensions(int p_Width, int p_Height,
+                                            int p_Row, int p_Column,
+                                            int p_Rows, int p_Columns,
+                                            int p_CellSpacing, int p_OuterBorderWidth)
+{
+    GridCell cell;
+
+    // Store the row and column
+    cell.row = p_Row;
+    cell.column = p_Column;
+
+    // Calculate usable area (excluding outer border)
+    int usableWidth = p_Width - (2 * p_OuterBorderWidth);
+    int usableHeight = p_Height - (2 * p_OuterBorderWidth);
+
+    // Calculate cell dimensions (excluding spacing)
+    float cellWidth = (float)usableWidth / p_Columns;
+    float cellHeight = (float)usableHeight / p_Rows;
+
+    // Calculate actual cell dimensions (accounting for spacing)
+    float actualCellWidth = cellWidth - p_CellSpacing;
+    float actualCellHeight = cellHeight - p_CellSpacing;
+
+    // Calculate the cell's boundaries
+    cell.startX = p_OuterBorderWidth + (p_Column * cellWidth) + (p_CellSpacing / 2.0f);
+    cell.endX = cell.startX + actualCellWidth;
+
+    cell.startY = p_OuterBorderWidth + (p_Row * cellHeight) + (p_CellSpacing / 2.0f);
+    cell.endY = cell.startY + actualCellHeight;
+
+    return cell;
+}
+
+// Function to check if a pixel is within a specific cell
+__DEVICE__ bool isInCell(int p_X, int p_Y, GridCell cell)
+{
+    return (p_X >= cell.startX && p_X < cell.endX &&
+            p_Y >= cell.startY && p_Y < cell.endY);
+}
 
 // Function to check if a pixel is within the selected cell
 __DEVICE__ bool isInSelectedCell(int p_X, int p_Y, int p_Width, int p_Height,
@@ -45,28 +102,15 @@ __DEVICE__ bool isInSelectedCell(int p_X, int p_Y, int p_Width, int p_Height,
     selectedRow = _fminf(selectedRow, p_Rows - 1);
     selectedColumn = _fminf(selectedColumn, p_Columns - 1);
 
-    // Calculate usable area (excluding outer border)
-    int usableWidth = p_Width - (2 * p_OuterBorderWidth);
-    int usableHeight = p_Height - (2 * p_OuterBorderWidth);
-
-    // Calculate cell dimensions (excluding spacing)
-    float cellWidth = (float)usableWidth / p_Columns;
-    float cellHeight = (float)usableHeight / p_Rows;
-
-    // Calculate actual cell dimensions (accounting for spacing)
-    float actualCellWidth = cellWidth - p_CellSpacing;
-    float actualCellHeight = cellHeight - p_CellSpacing;
-
-    // Calculate the selected cell's boundaries
-    float cellStartX = p_OuterBorderWidth + (selectedColumn * cellWidth) + (p_CellSpacing / 2.0f);
-    float cellEndX = cellStartX + actualCellWidth;
-
-    float cellStartY = p_OuterBorderWidth + (selectedRow * cellHeight) + (p_CellSpacing / 2.0f);
-    float cellEndY = cellStartY + actualCellHeight;
+    // Calculate the selected cell using our new function
+    GridCell selectedCell = calculateCellDimensions(
+        p_Width, p_Height,
+        selectedRow, selectedColumn,
+        p_Rows, p_Columns,
+        p_CellSpacing, p_OuterBorderWidth);
 
     // Check if the pixel is within the selected cell
-    return (p_X >= cellStartX && p_X < cellEndX &&
-            p_Y >= cellStartY && p_Y < cellEndY);
+    return isInCell(p_X, p_Y, selectedCell);
 }
 
 // Function to check if a pixel is on a grid line
@@ -117,13 +161,14 @@ __DEVICE__ bool isOnGridLine(int p_X, int p_Y, int p_Width, int p_Height,
 }
 
 // Main transform function
-__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+__DEVICE__ float4 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB, __TEXTURE__ p_TexA)
 {
     // Get the original pixel color
     float r = _tex2D(p_TexR, p_X, p_Y);
     float g = _tex2D(p_TexG, p_X, p_Y);
     float b = _tex2D(p_TexB, p_X, p_Y);
-    float3 originalColor = make_float3(r, g, b);
+    float a = _tex2D(p_TexA, p_X, p_Y);
+    float4 originalColor = make_float4(r, g, b, a);
 
     // Check if the pixel is within the selected cell
     bool inSelectedCell = isInSelectedCell(p_X, p_Y, p_Width, p_Height,
@@ -139,17 +184,15 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     // Return appropriate color based on pixel location
     if (onGridLine)
     {
-        // Return grid color - using the color picker value correctly
-        return make_float3(gridColor.r, gridColor.g, gridColor.b);
+        // Return grid color with full opacity
+        return make_float4(gridColor.r, gridColor.g, gridColor.b, 1.0f);
     }
-    else if (inSelectedCell)
+    if (inSelectedCell)
     {
         // Return original color for pixels in the selected cell
         return originalColor;
     }
-    else
-    {
-        // Return black for pixels outside the selected cell
-        return make_float3(0.0f, 0.0f, 0.0f);
-    }
+
+    // Return fully transparent pixel for pixels outside the selected cell
+    return make_float4(0.0f, 0.0f, 0.0f, 0.0f);
 }
